@@ -1,0 +1,27 @@
+{
+  "name": "babybonk-v1-v2-migration-contracts",
+  "version": "1.0.0",
+  "description": "Migrate babybonk v1 BEP20 token to v2 using this contract.",
+  "main": "index.ts",
+  "scripts": {
+    "test": "npm run dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/monteesharma0638/babybonk-v1-v2-migration-contracts.git"
+  },
+  "keywords": [
+    "babybonk",
+    "token",
+    "BEP20",
+    "binance",
+    "smart",
+    "chain"
+  ],
+  "author": "Babybonk",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/monteesharma0638/babybonk-v1-v2-migration-contracts/issues"
+  },
+  "homepage": "https://github.com/monteesharma0638/babybonk-v1-v2-migration-contracts#readme"
+}
