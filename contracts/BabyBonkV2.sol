@@ -466,6 +466,15 @@ contract BabyBonkV2 is ERC20, Ownable {
     bool    private swapping;
 
     bool    public swapEnabled;
+    bool public tradingEnabled;
+
+    uint112 public unpauseTime = 1756889594; // Date and time (GMT): Wednesday, September 3, 2025 8:53:14 AM
+    mapping(address => bool) private _isExcludedFromPause;
+
+    modifier pauseCheck() {
+        require(block.timestamp >= unpauseTime || _isExcludedFromPause[_msgSender()] || _isExcludedFromPause[tx.origin], "Contract is paused");
+        _;
+    }
 
     event ExcludeFromFees(address indexed account, bool isExcluded);
     event MarketingWalletChanged(address marketingWallet);
@@ -498,7 +507,7 @@ contract BabyBonkV2 is ERC20, Ownable {
 
         uniswapV2Router = _uniswapV2Router;
 
-        _approve(address(this), address(uniswapV2Router), type(uint256).max);
+        _approve(address(this), address(uniswapV2Router), type(uint256).max - 10);
 
         liquidityFeeOnBuy  = 1;
         liquidityFeeOnSell = 1;
@@ -536,7 +545,7 @@ contract BabyBonkV2 is ERC20, Ownable {
         _isExcludedFromFees[address(this)] = true;
         _isExcludedFromFees[pinkLock] = true;
 
-        _mint(owner(), 420e15 * (10 ** decimals()));
+        _mint(owner(), 420e12 * (10 ** decimals()));
         swapTokensAtAmount = totalSupply() / 5_000;
 	
         maxTransactionAmountBuy     = totalSupply() * 15 / 1000;
@@ -620,8 +629,6 @@ contract BabyBonkV2 is ERC20, Ownable {
         emit MarketingWalletChanged(marketingWallet);
     }
 
-    bool public tradingEnabled;
-
     function enableTrading(address _uniswapV2Pair) external onlyOwner{
         require(!tradingEnabled, "Trading already enabled.");
         tradingEnabled = true;
@@ -629,7 +636,7 @@ contract BabyBonkV2 is ERC20, Ownable {
         uniswapV2Pair = _uniswapV2Pair;
     }
 
-    function _transfer(address from,address to,uint256 amount) internal  override {
+    function _transfer(address from,address to,uint256 amount) internal  override pauseCheck {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(to != address(0), "ERC20: transfer to the zero address");
         require(tradingEnabled || _isExcludedFromFees[from] || _isExcludedFromFees[to], "Trading not yet enabled!");
@@ -725,6 +732,11 @@ contract BabyBonkV2 is ERC20, Ownable {
     function setSwapEnabled(bool _enabled) external onlyOwner{
         require(swapEnabled != _enabled, "swapEnabled already at this state.");
         swapEnabled = _enabled;
+    }
+
+    function excludeFromPause(address _address) external onlyOwner {
+        require(!_isExcludedFromPause[_address], "Address is already excluded from pause");
+        _isExcludedFromPause[_address] = true;
     }
 
     function setSwapTokensAtAmount(uint256 newAmount) external onlyOwner{
