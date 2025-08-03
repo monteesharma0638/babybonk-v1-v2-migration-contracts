@@ -23,5 +23,9 @@
   "bugs": {
     "url": "https://github.com/monteesharma0638/babybonk-v1-v2-migration-contracts/issues"
   },
-  "homepage": "https://github.com/monteesharma0638/babybonk-v1-v2-migration-contracts#readme"
+  "homepage": "https://github.com/monteesharma0638/babybonk-v1-v2-migration-contracts#readme",
+  "dependencies": {
+    "@openzeppelin/contracts": "4.0.0",
+    "openzeppelin-solidity": "^3.4.2"
+  }
 }

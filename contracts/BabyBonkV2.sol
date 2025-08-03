@@ -437,7 +437,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     ) internal virtual {}
 }
 
-contract BabyBonk is ERC20, Ownable {
+contract BabyBonkV2 is ERC20, Ownable {
     using Address for address payable;
 
     IUniswapV2Router02 public uniswapV2Router;
