@@ -485,22 +485,22 @@ contract BabyBonkV2 is ERC20, Ownable {
     event SwapAndSendMarketing(uint256 tokensSwapped, uint256 bnbSend);
     event SwapTokensAtAmountUpdated(uint256 swapTokensAtAmount);
 
-    constructor () ERC20("Baby Bonk", "BabyBonk") 
+    constructor (uint112 _unpauseTime) ERC20("Baby Bonk", "BabyBonk") 
     {   
         address router;
         address pinkLock;
+        unpauseTime = _unpauseTime;
         
-        if (block.chainid == 56) {
-            router = 0x10ED43C718714eb63d5aA57B78B54704E256024E; // BSC Pancake Mainnet Router
-            pinkLock = 0x407993575c91ce7643a4d4cCACc9A98c36eE1BBE; // BSC PinkLock
-        } else if (block.chainid == 97) {
+        if (block.chainid == 97) {
             router = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1; // BSC Pancake Testnet Router
             pinkLock = 0x5E5b9bE5fd939c578ABE5800a90C566eeEbA44a5; // BSC Testnet PinkLock
         } else if (block.chainid == 1 || block.chainid == 5) {
             router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D; // ETH Uniswap Mainnet % Testnet
             pinkLock = 0x71B5759d73262FBb223956913ecF4ecC51057641; // ETH PinkLock
         } else {
-            revert();
+            // Assuming BSC Mainnet for default case
+            router = 0x10ED43C718714eb63d5aA57B78B54704E256024E; // BSC Pancake Mainnet Router
+            pinkLock = 0x407993575c91ce7643a4d4cCACc9A98c36eE1BBE; // BSC PinkLock
         }
 
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(router);
@@ -545,7 +545,7 @@ contract BabyBonkV2 is ERC20, Ownable {
         _isExcludedFromFees[address(this)] = true;
         _isExcludedFromFees[pinkLock] = true;
 
-        _mint(owner(), 420e12 * (10 ** decimals()));
+        _mint(owner(), 420_000_000_000 * (10 ** decimals())); // 420 Billion tokens
         swapTokensAtAmount = totalSupply() / 5_000;
 	
         maxTransactionAmountBuy     = totalSupply() * 15 / 1000;

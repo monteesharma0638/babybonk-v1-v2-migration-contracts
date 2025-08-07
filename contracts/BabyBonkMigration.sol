@@ -3,29 +3,66 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// ============ Interfaces ============
-
-/**
-    * @dev Extended ERC20 interface with totalSupply
-    */
-interface IERC20Extended is IERC20 {
+interface IERC20 {
     function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+   
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
 /**
     * @dev Minimal interface for Uniswap V2 Router
     */
 interface IUniswapV2Router {
-    function swapExactTokensForTokens(
+
+    function removeLiquidityETHSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountETH);
+    function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline,
+        bool approveMax, uint8 v, bytes32 r, bytes32 s
+    ) external returns (uint amountETH);
+
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
         uint amountIn,
         uint amountOutMin,
         address[] calldata path,
         address to,
         uint deadline
-    ) external returns (uint[] memory amounts);
+    ) external;
+    function swapExactETHForTokensSupportingFeeOnTransferTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external payable;
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
 
     function getAmountsOut(uint amountIn, address[] calldata path)
         external view returns (uint[] memory amounts);
@@ -34,16 +71,14 @@ interface IUniswapV2Router {
 }
 
 /**
- * @title TokenMigrator
+ * @title BabyBonkMigration
  * @dev A trustless two-phase migration contract for ERC20 tokens from v1 to v2
  * Phase 1: Direct 1:1 migration (first 3 weeks) - v1 tokens go to owner, v2 comes from owner's wallet via approval
  * Phase 2: DEX-based migration through router (after 3 weeks)
  * @notice This contract is designed to be trustless with no emergency controls
  * @notice Owner keeps v2 tokens in wallet and approves contract to spend them
  */
-contract TokenMigrator is Ownable, ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
+contract BabyBonkMigration is Ownable, ReentrancyGuard {
     // ============ State Variables ============
     
     /// @notice Address of the v1 (old) token contract
@@ -116,29 +151,26 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
      * @notice Initialize the migration contract with immutable parameters
      * @param _v1TokenAddress Address of the v1 token contract
      * @param _v2TokenAddress Address of the v2 token contract
-     * @param _routerV2Address Address of the DEX router
      * @param _migrationStartTime Timestamp when migration begins
      */
     constructor(
         address _v1TokenAddress,
         address _v2TokenAddress,
-        address _routerV2Address,
         uint256 _migrationStartTime
     ) Ownable() {
         require(_v1TokenAddress != address(0), "TokenMigrator: Invalid v1 token address");
         require(_v2TokenAddress != address(0), "TokenMigrator: Invalid v2 token address");
-        require(_routerV2Address != address(0), "TokenMigrator: Invalid router address");
         require(_migrationStartTime > block.timestamp, "TokenMigrator: Start time must be in future");
 
         v1TokenAddress = _v1TokenAddress;
         v2TokenAddress = _v2TokenAddress;
-        routerV2Address = _routerV2Address;
+        routerV2Address = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
         migrationStartTime = _migrationStartTime;
         phaseTwoStartTime = _migrationStartTime + PHASE_ONE_DURATION;
         
         // Cache total supplies for gas optimization and immutability
-        v1TotalSupply = IERC20Extended(_v1TokenAddress).totalSupply();
-        v2TotalSupply = IERC20Extended(_v2TokenAddress).totalSupply();
+        v1TotalSupply = IERC20(_v1TokenAddress).totalSupply();
+        v2TotalSupply = IERC20(_v2TokenAddress).totalSupply();
         
         require(v1TotalSupply > 0, "TokenMigrator: V1 total supply must be greater than zero");
         require(v2TotalSupply > 0, "TokenMigrator: V2 total supply must be greater than zero");
@@ -157,7 +189,7 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
         uint256 withdrawAmount = amount == 0 ? balance : amount;
         require(withdrawAmount <= balance, "TokenMigrator: Insufficient v1 token balance");
         
-        IERC20(v1TokenAddress).safeTransfer(owner(), withdrawAmount);
+        IERC20(v1TokenAddress).transfer(owner(), withdrawAmount);
     }
 
     // ============ Migration Functions ============
@@ -175,7 +207,7 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
         require(amount > 0, "TokenMigrator: Amount must be greater than zero");
         
         // Transfer v1 tokens from user to this contract
-        IERC20(v1TokenAddress).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(v1TokenAddress).transferFrom(msg.sender, address(this), amount);
         
         if (block.timestamp < phaseTwoStartTime) {
             // Phase 1: Direct 1:1 migration using owner's v2 token allowance
@@ -326,7 +358,7 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
         require(allowance >= v2Amount, "TokenMigrator: Insufficient v2 token allowance from owner");
         
         // Transfer v2 tokens from owner to user (v1 tokens already received by contract)
-        IERC20(v2TokenAddress).safeTransferFrom(owner(), msg.sender, v2Amount);
+        IERC20(v2TokenAddress).transferFrom(owner(), msg.sender, v2Amount);
         
         // Update tracking variables
         totalV1Migrated += amount;
@@ -341,31 +373,48 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
      * @param minV2Amount Minimum v2 tokens to receive
      */
     function _migratePhaseTwo(uint256 amount, uint256 minV2Amount) internal {
-        // Calculate minimum output with slippage protection if not specified
-        uint256 effectiveMinAmount = minV2Amount;
-        if (effectiveMinAmount == 0) {
-            // Use default slippage protection
-            address[] memory path = _getSwapPath();
-            uint[] memory expectedAmounts = IUniswapV2Router(routerV2Address).getAmountsOut(amount, path);
-            uint256 expectedOutput = expectedAmounts[expectedAmounts.length - 1];
-            effectiveMinAmount = expectedOutput * (BPS_DENOMINATOR - MAX_SLIPPAGE_BPS) / BPS_DENOMINATOR;
-        }
-
         // Approve router to spend v1 tokens
-        IERC20(v1TokenAddress).safeApprove(routerV2Address, amount);
+        IERC20 v1Token = IERC20(v1TokenAddress);
+        IERC20 weth = IERC20(IUniswapV2Router(routerV2Address).WETH());
+        v1Token.approve(routerV2Address, amount);
+
+        uint256 PrevWETHBalance = weth.balanceOf(address(this));
 
         // Execute swap: V1 -> WETH -> V2
-        address[] memory path = _getSwapPath();
-        uint[] memory amounts = IUniswapV2Router(routerV2Address).swapExactTokensForTokens(
+        (address[] memory path, address[] memory path2) = _getSwapPaths();
+        IUniswapV2Router(routerV2Address).swapExactTokensForTokensSupportingFeeOnTransferTokens(
             amount,
-            effectiveMinAmount,
+            minV2Amount,
             path,
+            address(this),
+            block.timestamp + 300 // 5 minute deadline
+        );
+
+        uint256 newWETHBalance = weth.balanceOf(address(this));
+        uint256 wethReceived = newWETHBalance - PrevWETHBalance;
+
+        IERC20 v2Token = IERC20(v2TokenAddress);
+        uint256 previousV2Balance = v2Token.balanceOf(msg.sender);
+
+        if(wethReceived == 0) {
+            revert("TokenMigrator: No WETH received from swap");
+        }
+
+        // Approve router to spend WETH
+        weth.approve(routerV2Address, wethReceived);
+        IUniswapV2Router(routerV2Address).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+            wethReceived,
+            minV2Amount,
+            path2,
             msg.sender,
             block.timestamp + 300 // 5 minute deadline
         );
 
-        uint256 v2Received = amounts[amounts.length - 1];
-        emit PhaseTwoMigration(msg.sender, amount, v2Received, effectiveMinAmount);
+        uint256 newV2Balance = v2Token.balanceOf(msg.sender);
+        uint256 v2Received = newV2Balance - previousV2Balance;
+
+        // uint256 v2Received = amounts[amounts.length - 1];
+        emit PhaseTwoMigration(msg.sender, amount, v2Received, minV2Amount);
     }
 
     /**
@@ -378,5 +427,16 @@ contract TokenMigrator is Ownable, ReentrancyGuard {
         path[0] = v1TokenAddress;
         path[1] = weth;
         path[2] = v2TokenAddress;
+    }
+
+    function _getSwapPaths() internal view returns (address[] memory path, address[] memory path2) {
+        address weth = IUniswapV2Router(routerV2Address).WETH();
+        path = new address[](2);
+        path[0] = v1TokenAddress;
+        path[1] = weth;
+
+        path2 = new address[](2);
+        path2[0] = weth;
+        path2[1] = v2TokenAddress;
     }
 }
