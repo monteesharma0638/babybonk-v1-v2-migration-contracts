@@ -23,7 +23,7 @@ async function addLiquidity(babybonkv2, owner) {
   const deadline = blockTime + 1200; // 20 minutes from now
   const amountToDeposit = BigInt(Math.floor(Number(ownerBabyBonkV2Balance) * 0.5));
   assert.isTrue(amountToDeposit < BigInt(Number(ownerBabyBonkV2Balance)), "deposit amount is greater then the balance");
-  console.log("🚀 ~ addLiquidity ~ amountToDeposit:", amountToDeposit)
+  // console.log("🚀 ~ addLiquidity ~ amountToDeposit:", amountToDeposit)
   // Add Liquidity to PancakeSwap: BabyBonkV2 <-> WBNB
   const ownerETHBalance = await web3.eth.getBalance(owner);
   const ethAmountToDeposit = web3.utils.toWei("10", "ether");
@@ -48,7 +48,7 @@ async function addLiquidity(babybonkv2, owner) {
  * ganache-cli   --fork https://rpc.ankr.com/bsc/385e4834e32a582cf24cc4881a8269265b95a4aab8ef0134ff28b2512a16d5eb  --unlock 0xC3dcd744db3f114f0edF03682b807b78A227Bf74 --gasLimit 75000000 --gasPrice 110000000   --unlock 0x00AB0490dAE37A0086Ff4967E388Ac774bC711De   --accounts 10
  */
 contract("BabyBonkMigration", function (accounts) {
-  let babybonkmigration, babybonkv2, snapshotId, babybonkv1;
+  let babybonkmigration, babybonkv2, snapshotId, babybonkv1, router;
   const whaleAddress = "0x00AB0490dAE37A0086Ff4967E388Ac774bC711De";
   const whale2Address = "0xC3dcd744db3f114f0edF03682b807b78A227Bf74";
   const amountV1 = 900000000000n;
@@ -59,6 +59,7 @@ contract("BabyBonkMigration", function (accounts) {
     advanceTimeAndBlock(100);
     snapshotId = await takeSnapshot();
     const block = await web3.eth.getBlock("latest");
+    router = await IUniswapV2Router.at("0x10ED43C718714eb63d5aA57B78B54704E256024E"); // PancakeSwap Router v2 mainnet
 
     babybonkv1 = await BabyBonkV1.at("0xBb2826Ab03B6321E170F0558804F2B6488C98775"); // Replace with actual deployed address
     // Deploying the v2 token contract.
@@ -101,130 +102,125 @@ contract("BabyBonkMigration", function (accounts) {
     await revertSnapshot(snapshotId);
   });
 
-  // it("Just a normal before and after each test", async () => {
-  //   assert.ok(babybonkv1.address, "babybonkv2 should be deployed");
-  // })
+  it("Just a normal before and after each test", async () => {
+    assert.ok(babybonkv1.address, "babybonkv2 should be deployed");
+  })
 
-  // it("Whale should not excluded from babybonk v1", async () => {
-  //   for(i = 0; i < 2; i++) {
-  //     const address = i = 1? whaleAddress : whale2Address;
-  //     const isExcludedFromMaxWalletLimit = await babybonkv1.isExcludedFromMaxWalletLimit(address);
-  //     const isExcludedFromMaxTransaction = await babybonkv1.isExcludedFromMaxTransaction(address);
-  //     const isExcludedFromFees = await babybonkv1.isExcludedFromFees(address);
-  //     assert.isTrue(!isExcludedFromFees, `${address} included in isExcludedFromFees`);
-  //     assert.isTrue(!isExcludedFromMaxTransaction, `${address} included in isExcludedFromMaxTransaction`);
-  //     assert.isTrue(!isExcludedFromMaxWalletLimit, `${address} included in isExcludedFromMaxWalletLimit`);
-  //   }
-  // })
+  it("Whale should not excluded from babybonk v1", async () => {
+    for(i = 0; i < 2; i++) {
+      const address = i = 1? whaleAddress : whale2Address;
+      const isExcludedFromMaxWalletLimit = await babybonkv1.isExcludedFromMaxWalletLimit(address);
+      const isExcludedFromMaxTransaction = await babybonkv1.isExcludedFromMaxTransaction(address);
+      const isExcludedFromFees = await babybonkv1.isExcludedFromFees(address);
+      assert.isTrue(!isExcludedFromFees, `${address} included in isExcludedFromFees`);
+      assert.isTrue(!isExcludedFromMaxTransaction, `${address} included in isExcludedFromMaxTransaction`);
+      assert.isTrue(!isExcludedFromMaxWalletLimit, `${address} included in isExcludedFromMaxWalletLimit`);
+    }
+  })
 
-  // it("should not allow migration before start time", async () => {
-  //   try {
-  //     await babybonkmigration.migrate(amountV1, 0, { from: whaleAddress });
-  //     assert.fail("Migration should not be allowed before start time");
-  //   } catch (error) {
-  //     assert.include(error?.message, "TokenMigrator: Migration not yet active");
-  //   }
-  // });
+  it("should not allow migration before start time", async () => {
+    try {
+      await babybonkmigration.migrate(amountV1, 0, { from: whaleAddress });
+      assert.fail("Migration should not be allowed before start time");
+    } catch (error) {
+      assert.include(error?.message, "TokenMigrator: Migration not yet active");
+    }
+  });
 
-  // it("should able to migrate after start time", async () => {
-  //   try {
-  //     await advanceTimeAndBlock(10000);
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whaleAddress});
-  //   }
-  //   catch(error) {
-  //     assert.fail(error?.message, "Migration not done properly even after started.");
-  //   }
-  // })
+  it("should able to migrate after start time", async () => {
+    try {
+      await advanceTimeAndBlock(10000);
+      await babybonkmigration.migrate(amountV1, 0, {from: whaleAddress});
+    }
+    catch(error) {
+      assert.fail(error?.message, "Migration not done properly even after started.");
+    }
+  })
 
-  // it("should not able to migrate after phase 2 starts before adding liquidity", async () => {
-  //   try {
-  //     await advanceTimeAndBlock(10000);
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whaleAddress});
-  //     await advanceTimeAndBlock(1.914e6);
-  //     await babybonkv1.approve(babybonkmigration.address, amountV1, {from: whale2Address});
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whale2Address});
-  //     assert.fail("Migration should not be allowed before adding liquidity");
-  //   }
-  //   catch(error) {
-  //     assert.ok(true, "TokenMigrator: Liquidity not added yet.");
-  //   }
-  // })
+  it("should not able to migrate after phase 2 starts before adding liquidity", async () => {
+    try {
+      await advanceTimeAndBlock(10000);
+      await babybonkmigration.migrate(amountV1, 0, {from: whaleAddress});
+      await advanceTimeAndBlock(1.914e6);
+      await babybonkv1.approve(babybonkmigration.address, amountV1, {from: whale2Address});
+      await babybonkmigration.migrate(amountV1, 0, {from: whale2Address});
+      assert.fail("Migration should not be allowed before adding liquidity");
+    }
+    catch(error) {
+      assert.ok(true, "TokenMigrator: Liquidity not added yet.");
+    }
+  })
 
-  // it("validate transfer amount on phase 1", async () => {
-  //   try {
-  //     await advanceTimeAndBlock(10000);
-  //     const [bWhaleV1Prev, bWhaleV2Prev, bMigrationV1Prev, bOwnerV2Prev] = await Promise.all([
-  //       babybonkv1.balanceOf(whale2Address),
-  //       babybonkv2.balanceOf(whale2Address),
-  //       babybonkv1.balanceOf(babybonkmigration.address),
-  //       babybonkv2.balanceOf(owner),
-  //     ]);
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whale2Address});
-  //     const [bWhaleV1After, bWhaleV2After, bMigrationV1After, bOwnerV2After] = await Promise.all([
-  //       babybonkv1.balanceOf(whale2Address),
-  //       babybonkv2.balanceOf(whale2Address),
-  //       babybonkv1.balanceOf(babybonkmigration.address),
-  //       babybonkv2.balanceOf(owner),
-  //     ])
-  //     assert.equal(Number(bMigrationV1After - bMigrationV1Prev), Number(amountV1), "amount received must be same as the amount sent in transaction.");
-  //     assert.isTrue(Number(bWhaleV1Prev - bWhaleV1After)/Number(bMigrationV1After - bMigrationV1Prev) > 0.99, "Received v1 token amount mismatch.");
-  //     assert.isTrue(Number(bOwnerV2Prev - bOwnerV2After)/Number(bWhaleV2After - bWhaleV2Prev) > 0.99, "Received token amount should be equal what is sent.");
-  //   }
-  //   catch(err) {
-  //     assert.fail(err?.message);
-  //   }
-  // })
+  it("validate transfer amount on phase 1", async () => {
+    try {
+      await advanceTimeAndBlock(10000);
+      const [bWhaleV1Prev, bWhaleV2Prev, bMigrationV1Prev, bOwnerV2Prev] = await Promise.all([
+        babybonkv1.balanceOf(whale2Address),
+        babybonkv2.balanceOf(whale2Address),
+        babybonkv1.balanceOf(babybonkmigration.address),
+        babybonkv2.balanceOf(owner),
+      ]);
+      await babybonkmigration.migrate(amountV1, 0, {from: whale2Address});
+      const [bWhaleV1After, bWhaleV2After, bMigrationV1After, bOwnerV2After] = await Promise.all([
+        babybonkv1.balanceOf(whale2Address),
+        babybonkv2.balanceOf(whale2Address),
+        babybonkv1.balanceOf(babybonkmigration.address),
+        babybonkv2.balanceOf(owner),
+      ])
+      assert.equal(Number(bMigrationV1After - bMigrationV1Prev), Number(amountV1), "amount received must be same as the amount sent in transaction.");
+      assert.isTrue(Number(bWhaleV1Prev - bWhaleV1After)/Number(bMigrationV1After - bMigrationV1Prev) > 0.99, "Received v1 token amount mismatch.");
+      assert.isTrue(Number(bOwnerV2Prev - bOwnerV2After)/Number(bWhaleV2After - bWhaleV2Prev) > 0.99, "Received token amount should be equal what is sent.");
+    }
+    catch(err) {
+      assert.fail(err?.message);
+    }
+  })
 
-  // it("Babybonk v2 transferFrom should work", async () => {
-  //   await advanceTimeAndBlock(10000);
-  //   await babybonkv2.approve(whale2Address,  amountV1, {from: owner});
-  //   await babybonkv2.transferFrom(owner, whaleAddress, amountV1, {from: whale2Address});
-  //   const bWhaleAddress = await babybonkv2.balanceOf(whaleAddress);
-  //   assert.equal(bWhaleAddress, amountV1, "Balance transfer is not equal");
-  // })
+  it("Babybonk v2 transferFrom should work", async () => {
+    await advanceTimeAndBlock(10000);
+    await babybonkv2.approve(whale2Address,  amountV1, {from: owner});
+    await babybonkv2.transferFrom(owner, whaleAddress, amountV1, {from: whale2Address});
+    const bWhaleAddress = await babybonkv2.balanceOf(whaleAddress);
+    assert.equal(bWhaleAddress, amountV1, "Balance transfer is not equal");
+  })
   
   it("should be able to migrate after phase 2 starts and after adding liquidity", async () => {
       const owner = accounts[0];
         // Step 1: Phase 1 migration
       await advanceTimeAndBlock(10000);
       const amountToMigrate = BigInt(10**12);
-      // await babybonkv1.approve(babybonkmigration.address, amountToMigrate, {from: whaleAddress})
-      // await babybonkmigration.migrate(amountToMigrate, 0, { from: whaleAddress });
+      await babybonkv1.approve(babybonkmigration.address, amountToMigrate, {from: whale2Address})
+      await babybonkmigration.migrate(amountToMigrate, 0, { from: whale2Address });
       // Step 3: Advance time to Phase 2
       await advanceTimeAndBlock(1.914e6); // 22 days
       await addLiquidity(babybonkv2, owner); // adding liquidity
-      const {"0": expectedAmount} = await babybonkmigration.getExpectedMigrationOutput(amountToMigrate);
-      console.log("🚀 ~ expectedAmount:", expectedAmount.toString());
       // Step 4: Whale2 migrates after liquidity is added
-      await babybonkv1.approve(babybonkmigration.address, amountToMigrate, { from: whaleAddress });
-      await babybonkmigration.migrate(amountToMigrate, 0, { from: whaleAddress });
-      const actualAmount = await babybonkv2.balanceOf(whaleAddress);
-      console.log("🚀 ~ actualAmount:", actualAmount)
-      assert.isTrue(actualAmount/expectedAmount > 0.90, "Very low output:::" + actualAmount/expectedAmount);
+      const weth = await router.WETH();
+      const path = [babybonkv1.address, weth, babybonkv2.address];
+      const [,,expectedAmount] = await router.getAmountsOut(
+        amountToMigrate,
+        path
+      );
+      // console.log("🚀 ~ expectedAmount:", expectedAmount.toString())
+      await babybonkv1.approve(router.address, amountToMigrate, { from: whaleAddress });
+      // console.log("🚀 ~ weth:", weth)
+      const blockTime = await getCurrentBlockTime();
+      const initialBalance = await babybonkv2.balanceOf(whaleAddress);
+      await router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        amountToMigrate,
+        0,
+        path,
+        whaleAddress,
+        BigInt(blockTime + 300).toString(),
+        {
+          from: whaleAddress
+        }
+      )
+      const finalBalance = await babybonkv2.balanceOf(whaleAddress);
+      const actualAmount = finalBalance - initialBalance;
+      // console.log("🚀 ~ actualAmount:", actualAmount)
+      const calculation = actualAmount/expectedAmount;
+      // console.log("🚀 ~ calculation:", calculation);
+      assert.isTrue(1 > calculation > 0.90, "Very low output:::" + calculation);
   });
-
-  // it("validate transfers amount on phase 2", async () => {
-  //   try {
-  //     await advanceTimeAndBlock(10000);
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whaleAddress});
-  //     await advanceTimeAndBlock(1.914e6);
-
-  //     await addLiquidity(babybonkv2, owner); // adding liquidity
-  //     await babybonkv1.approve(babybonkmigration.address, amountV1, {from: whale2Address});
-  //     const [bWhaleV1Prev, bWhaleV2Prev] = await Promise.all([
-  //       babybonkv1.balanceOf(whaleAddress),
-  //       babybonkv2.balanceOf(whaleAddress)
-  //     ]);
-  //     await babybonkmigration.migrate(amountV1, 0, {from: whale2Address});
-  //     const [bWhaleV1After, bWhaleV2After] = await Promise.all([
-  //       babybonkv1.balanceOf(whaleAddress),
-  //       babybonkv2.balanceOf(whaleAddress)
-  //     ])
-  //     assert.isTrue((bWhaleV2After - bWhaleV2Prev) > 0, "V2 deposit must be greater then zero");
-  //     assert.isTrue((bWhaleV1Prev - bWhaleV1After) > 0, "V1 debit must be greater then zero");
-  //   }
-  //   catch(err) {
-  //     assert.fail(err?.message);
-  //   }
-  // })
 });

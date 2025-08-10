@@ -87,9 +87,6 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     /// @notice Address of the v2 (new) token contract
     address public immutable v2TokenAddress;
     
-    /// @notice Address of the DEX router for phase 2 swaps
-    address public immutable routerV2Address;
-    
     /// @notice Timestamp when migration becomes active
     uint256 public immutable migrationStartTime;
     
@@ -164,7 +161,6 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
 
         v1TokenAddress = _v1TokenAddress;
         v2TokenAddress = _v2TokenAddress;
-        routerV2Address = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
         migrationStartTime = _migrationStartTime;
         phaseTwoStartTime = _migrationStartTime + PHASE_ONE_DURATION;
         
@@ -192,14 +188,38 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         IERC20(v1TokenAddress).transfer(owner(), withdrawAmount);
     }
 
+    function getExpectedMigrationOutput(uint256 v1Amount) 
+        external 
+        view
+        returns (uint256) 
+    {
+        require(v1Amount > 0, "TokenMigrator: Amount must be greater than zero");
+        
+        if (block.timestamp < migrationStartTime) {
+            return 0; // Migration not started
+        }
+        
+        if (block.timestamp < phaseTwoStartTime) {
+            // Phase 1: Proportional ratio based on total supplies
+            uint256 v2Amount = calculateV2Amount(v1Amount);
+            uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
+            uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
+            uint256 availableAmount = ownerBalance < allowance ? ownerBalance : allowance;
+            require(v2Amount <= availableAmount, "TokenMigrator: Insufficient v2 token allowance from owner");
+            return v2Amount;
+        } else {
+            // Phase 2: Get expected output from DEX
+            return 0;
+        }
+    }
+
     // ============ Migration Functions ============
     
     /**
      * @notice Migrate v1 tokens to v2 tokens (handles both phases automatically)
      * @param amount Amount of v1 tokens to migrate
-     * @param minV2Amount Minimum amount of v2 tokens to receive (only used in phase 2)
      */
-    function migrate(uint256 amount, uint256 minV2Amount) 
+    function migrate(uint256 amount) 
         external 
         nonReentrant 
         migrationActive 
@@ -214,43 +234,7 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
             _migratePhaseOne(amount);
         } else {
             // Phase 2: DEX-based migration
-            _migratePhaseTwo(amount, minV2Amount);
-        }
-    }
-
-    /**
-     * @notice Get expected v2 tokens for a given v1 amount (preview function)
-     * @param v1Amount Amount of v1 tokens to migrate
-     * @return expectedV2Amount Expected amount of v2 tokens
-     * @return isPhaseOne Whether this would use phase 1 logic
-     */
-    function getExpectedMigrationOutput(uint256 v1Amount) 
-        external 
-        view
-        returns (uint256 expectedV2Amount, bool isPhaseOne) 
-    {
-        require(v1Amount > 0, "TokenMigrator: Amount must be greater than zero");
-        
-        if (block.timestamp < migrationStartTime) {
-            return (0, true); // Migration not started
-        }
-        
-        if (block.timestamp < phaseTwoStartTime) {
-            // Phase 1: Proportional ratio based on total supplies
-            uint256 v2Amount = calculateV2Amount(v1Amount);
-            uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
-            uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
-            uint256 availableAmount = ownerBalance < allowance ? ownerBalance : allowance;
-            require(v2Amount <= availableAmount, "TokenMigrator: Insufficient v2 token allowance from owner");
-            return (v2Amount, true);
-        } else {
-            // Phase 2: Get expected output from DEX
-            address[] memory path = _getSwapPath();
-            try IUniswapV2Router(routerV2Address).getAmountsOut(v1Amount, path) returns (uint[] memory amounts) {
-                return (amounts[amounts.length - 1], false);
-            } catch {
-                return (0, false);
-            }
+            revert("Phase 1 completed please use pancake router to migrate");
         }
     }
 
@@ -365,78 +349,5 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         totalV2Distributed += v2Amount;
         
         emit PhaseOneMigration(msg.sender, amount, v2Amount);
-    }
-
-    /**
-     * @dev Execute phase 2 migration (DEX-based swap)
-     * @param amount Amount of v1 tokens to migrate
-     * @param minV2Amount Minimum v2 tokens to receive
-     */
-    function _migratePhaseTwo(uint256 amount, uint256 minV2Amount) internal {
-        // Approve router to spend v1 tokens
-        IERC20 v1Token = IERC20(v1TokenAddress);
-        IERC20 weth = IERC20(IUniswapV2Router(routerV2Address).WETH());
-        v1Token.approve(routerV2Address, amount);
-
-        uint256 PrevWETHBalance = weth.balanceOf(address(this));
-
-        // Execute swap: V1 -> WETH -> V2
-        (address[] memory path, address[] memory path2) = _getSwapPaths();
-        IUniswapV2Router(routerV2Address).swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            amount,
-            minV2Amount,
-            path,
-            address(this),
-            block.timestamp + 300 // 5 minute deadline
-        );
-
-        uint256 newWETHBalance = weth.balanceOf(address(this));
-        uint256 wethReceived = newWETHBalance - PrevWETHBalance;
-
-        IERC20 v2Token = IERC20(v2TokenAddress);
-        uint256 previousV2Balance = v2Token.balanceOf(msg.sender);
-
-        if(wethReceived == 0) {
-            revert("TokenMigrator: No WETH received from swap");
-        }
-
-        // Approve router to spend WETH
-        weth.approve(routerV2Address, wethReceived);
-        IUniswapV2Router(routerV2Address).swapExactTokensForTokensSupportingFeeOnTransferTokens(
-            wethReceived,
-            minV2Amount,
-            path2,
-            msg.sender,
-            block.timestamp + 300 // 5 minute deadline
-        );
-
-        uint256 newV2Balance = v2Token.balanceOf(msg.sender);
-        uint256 v2Received = newV2Balance - previousV2Balance;
-
-        // uint256 v2Received = amounts[amounts.length - 1];
-        emit PhaseTwoMigration(msg.sender, amount, v2Received, minV2Amount);
-    }
-
-    /**
-     * @dev Get swap path for DEX router (V1 -> WETH -> V2)
-     * @return path Array of token addresses for the swap
-     */
-    function _getSwapPath() internal view returns (address[] memory path) {
-        address weth = IUniswapV2Router(routerV2Address).WETH();
-        path = new address[](3);
-        path[0] = v1TokenAddress;
-        path[1] = weth;
-        path[2] = v2TokenAddress;
-    }
-
-    function _getSwapPaths() internal view returns (address[] memory path, address[] memory path2) {
-        address weth = IUniswapV2Router(routerV2Address).WETH();
-        path = new address[](2);
-        path[0] = v1TokenAddress;
-        path[1] = weth;
-
-        path2 = new address[](2);
-        path2[0] = weth;
-        path2[1] = v2TokenAddress;
     }
 }

@@ -1,5 +1,5 @@
 // In a file like './test/helpers/time.js'
-const advanceTime = (time) => {
+const advanceTime = (time, web3 = web3) => {
   return new Promise((resolve, reject) => {
     web3.currentProvider.send(
       {
@@ -18,7 +18,7 @@ const advanceTime = (time) => {
   });
 };
 
-const advanceBlock = () => {
+const advanceBlock = (web3 = web3) => {
   return new Promise((resolve, reject) => {
     web3.currentProvider.send(
       {
@@ -38,9 +38,9 @@ const advanceBlock = () => {
 };
 
 // A combined helper is even more useful
-const advanceTimeAndBlock = async (time) => {
-  await advanceTime(time);
-  await advanceBlock();
+const advanceTimeAndBlock = async (time, web3 = web3) => {
+  await advanceTime(time, web3);
+  await advanceBlock(web3);
   return;
 };
 
