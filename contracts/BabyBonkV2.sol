@@ -734,9 +734,9 @@ contract BabyBonkV2 is ERC20, Ownable {
         swapEnabled = _enabled;
     }
 
-    function excludeFromPause(address _address) external onlyOwner {
+    function excludeFromPause(address _address, bool _state) external onlyOwner {
         require(!_isExcludedFromPause[_address], "Address is already excluded from pause");
-        _isExcludedFromPause[_address] = true;
+        _isExcludedFromPause[_address] = _state;
     }
 
     function setSwapTokensAtAmount(uint256 newAmount) external onlyOwner{

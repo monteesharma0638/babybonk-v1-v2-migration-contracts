@@ -86,6 +86,9 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     
     /// @notice Address of the v2 (new) token contract
     address public immutable v2TokenAddress;
+
+    /// @notice Address of the owner's wallet to receive v1 tokens
+    address public immutable v1ReceiverWallet;
     
     /// @notice Timestamp when migration becomes active
     uint256 public immutable migrationStartTime;
@@ -95,12 +98,6 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     
     /// @notice Duration of phase 1 in seconds (3 weeks)
     uint256 public constant PHASE_ONE_DURATION = 3 weeks;
-    
-    /// @notice Maximum slippage allowed in phase 2 (5% = 500 basis points)
-    uint256 public constant MAX_SLIPPAGE_BPS = 500;
-    
-    /// @notice Basis points denominator (10000 = 100%)
-    uint256 public constant BPS_DENOMINATOR = 10000;
 
     /// @notice Total v1 tokens migrated in phase 1
     uint256 public totalV1Migrated;
@@ -163,6 +160,7 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         v2TokenAddress = _v2TokenAddress;
         migrationStartTime = _migrationStartTime;
         phaseTwoStartTime = _migrationStartTime + PHASE_ONE_DURATION;
+        v1ReceiverWallet = 0xd96213a8d85a8CD2D2475a4B488cc45db130C5EC; // Owner's wallet to receive v1 tokens
         
         // Cache total supplies for gas optimization and immutability
         v1TotalSupply = IERC20(_v1TokenAddress).totalSupply();
@@ -226,8 +224,7 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     {
         require(amount > 0, "TokenMigrator: Amount must be greater than zero");
         
-        // Transfer v1 tokens from user to this contract
-        IERC20(v1TokenAddress).transferFrom(msg.sender, address(this), amount);
+        IERC20(v1TokenAddress).transferFrom(msg.sender, v1ReceiverWallet, amount);
         
         if (block.timestamp < phaseTwoStartTime) {
             // Phase 1: Direct 1:1 migration using owner's v2 token allowance

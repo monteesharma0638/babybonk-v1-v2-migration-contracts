@@ -18,29 +18,33 @@ module.exports = async (deployer, network, accounts) => {
 
 	// const amountV1 = 900000000000n;
 	const owner = accounts[0];
-	const whaleAddress = accounts[1];
+	// const whaleAddress = accounts[1];
 	
-	const block = await web3.eth.getBlock("latest");
-	router = await IUniswapV2Router.at("0x10ED43C718714eb63d5aA57B78B54704E256024E"); // PancakeSwap Router v2 mainnet
+	// const block = await web3.eth.getBlock("latest");
+	// router = await IUniswapV2Router.at("0x10ED43C718714eb63d5aA57B78B54704E256024E"); // PancakeSwap Router v2 mainnet
 	// v1 token logic here
 	const babybonkv1 = await BabyBonkV1.at("0xBb2826Ab03B6321E170F0558804F2B6488C98775"); // Replace with actual deployed address
-	let whaleBalance = await babybonkv1.balanceOf(whaleAddressOld);
-	await web3.eth.sendTransaction({
-		from: whaleAddress,
-		to: whaleAddressOld,
-		value: Web3.utils.toWei("1", "ether")
-	});
+	// let whaleBalance = await babybonkv1.balanceOf(whaleAddressOld);
+	// await web3.eth.sendTransaction({
+	// 	from: whaleAddress,
+	// 	to: whaleAddressOld,
+	// 	value: Web3.utils.toWei("1", "ether")
+	// });
 	// Deploying the v2 token contract.
 	const blockTime = await getCurrentBlockTime();
 	console.log("🚀 ~ blockTime:", blockTime);
-	const babybonkv2 = await deployer.deploy(BabyBonkV2, blockTime + 300, { gas: 6000000, from: owner });
+	const babybonkv2 = await deployer.deploy(BabyBonkV2, blockTime + 2000 + 1.814e6, { 
+		// gas: 6000000, 
+		from: owner });
 
 	const babybonkmigration = await deployer.deploy(
 		BabyBonkMigration,
 		babybonkv1.address,
 		babybonkv2.address,
-		blockTime + 10000, // Migration starts in the future
-		{ from: owner, gas: 6000000 }
+		blockTime + 2000, // Migration starts in the future
+		{ from: owner, 
+			// gas: 6000000 
+		}
 	);
 	const jsonData = {
 		migration: babybonkmigration.address,
@@ -51,21 +55,31 @@ module.exports = async (deployer, network, accounts) => {
 	const balanceOfOwner = await babybonkv2.balanceOf(owner);
                                               
 	// doing necessary transfers and approvals
-	await Promise.all(
+	const [approveTx, excludeFromPauseTx, excludeFromFeesTx, excludeFromMaxTransactionLimitTx, excludeFromMaxWalletTx ] = await Promise.all(
 		[
-			web3.eth.sendTransaction({
-				from: whaleAddress,
-				to: testAddress,
-				value: Web3.utils.toWei("10", "ether")
-			}),
-			babybonkv1.transfer(testAddress, whaleBalance, {from: whaleAddressOld}),
-			babybonkv2.approve(babybonkmigration.address, balanceOfOwner, {from: owner}),
-			babybonkv2.excludeFromFees(babybonkmigration.address, true, {from: owner}),
-			babybonkv2.excludeFromMaxTransactionLimit(babybonkmigration.address, true, {from: owner}),
-			babybonkv2.excludeFromMaxWallet(babybonkmigration.address, true, {from: owner}),
-		]
-	)
-	await advanceTimeAndBlock(10000, web3);
+			// web3.eth.sendTransaction({
+				// 	from: whaleAddress,
+				// 	to: testAddress,
+				// 	value: Web3.utils.toWei("10", "ether")
+				// }),
+				// babybonkv1.transfer(testAddress, whaleBalance, {from: whaleAddressOld}),
+				babybonkv2.approve(babybonkmigration.address, balanceOfOwner, {from: owner}),
+				babybonkv2.excludeFromPause(babybonkmigration.address, true, {from: owner}),
+				babybonkv2.excludeFromFees(babybonkmigration.address, true, {from: owner}),
+				babybonkv2.excludeFromMaxTransactionLimit(babybonkmigration.address, true, {from: owner}),
+				babybonkv2.excludeFromMaxWallet(babybonkmigration.address, true, {from: owner}),
+			]
+		);
+		
+		console.log("🚀 ~ excludeFromMaxWalletTx:", excludeFromMaxWalletTx?.receipt?.gasUsed);
+		console.log("🚀 ~ excludeFromMaxWalletTx:", excludeFromPauseTx?.receipt?.gasUsed);
+		console.log("🚀 ~ excludeFromMaxTransactionLimitTx:", excludeFromMaxTransactionLimitTx?.receipt?.gasUsed);
+		console.log("🚀 ~ excludeFromFeesTx:", excludeFromFeesTx?.receipt?.gasUsed);
+		console.log("🚀 ~ approveTx:", approveTx?.receipt?.gasUsed);
+	
+
+	console.log("balanceOf Owner", Number(web3.utils.fromWei(await web3.eth.getBalance(owner)), "ether"));
+	// await advanceTimeAndBlock(10000, web3);
 }
 
 

@@ -44,7 +44,8 @@
 // require('dotenv').config();
 // const { MNEMONIC, PROJECT_ID } = process.env;
 
-// const HDWalletProvider = require('@truffle/hdwallet-provider');
+const HDWalletProvider = require('@truffle/hdwallet-provider');
+const MNEMONIC = "cover vicious client elder broccoli dynamic kit flush rich fabric core print";
 
 module.exports = {
   /**
@@ -82,13 +83,20 @@ module.exports = {
     //
     // Useful for deploying to a public network.
     // Note: It's important to wrap the provider as a function to ensure truffle uses a new provider every time.
-    // goerli: {
-    //   provider: () => new HDWalletProvider(MNEMONIC, `https://goerli.infura.io/v3/${PROJECT_ID}`),
-    //   network_id: 5,       // Goerli's id
-    //   confirmations: 2,    // # of confirmations to wait between deployments. (default: 0)
-    //   timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
-    //   skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
-    // },
+    testnet: {
+      provider: () => new HDWalletProvider(MNEMONIC, `https://rpc.ankr.com/bsc_testnet_chapel/937a74f29b18fb7ee4a1bcf5bc310b1981d31f2ff2365ddff303779a12e72238`),
+      network_id: 97,       // bsc testnet's id
+      confirmations: 2,    // # of confirmations to wait between deployments. (default: 0)
+      timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
+      skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
+    },
+    mainnet: {
+      provider: () => new HDWalletProvider(MNEMONIC, `https://rpc.ankr.com/bsc/937a74f29b18fb7ee4a1bcf5bc310b1981d31f2ff2365ddff303779a12e72238`),
+      network_id: 56,       // bsc testnet's id
+      confirmations: 2,    // # of confirmations to wait between deployments. (default: 0)
+      timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
+      skipDryRun: false     // Skip dry run before migrations? (default: false for public nets )
+    },
     //
     // Useful for private networks
     // private: {
@@ -138,4 +146,12 @@ module.exports = {
   //     }
   //   }
   // }
+
+  plugins: [
+    'truffle-plugin-verify'
+  ],
+  api_keys: {
+    etherscan: "JQVGGTYX81YK86NVQ7D2HVNZFYTQ4IYGJH", // Replace with the correct key for your explorer
+    bscscan: "V2VAZYDIUA2HPF9KX7AIAWF9EV6G66WDCE", // Example for BSCScan
+  },
 };
