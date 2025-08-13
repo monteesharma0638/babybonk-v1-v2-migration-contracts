@@ -15,6 +15,7 @@ interface IERC20 {
         address recipient,
         uint256 amount
     ) external returns (bool);
+    function tradingEnabled() external view returns (bool);
    
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -76,6 +77,7 @@ interface IUniswapV2Router {
  * Phase 1: Direct 1:1 migration (first 3 weeks) - v1 tokens go to owner, v2 comes from owner's wallet via approval
  * Phase 2: DEX-based migration through router (after 3 weeks)
  * @notice This contract is designed to be trustless with no emergency controls
+ * @notice v1 tokens are sent to the owner's wallet immediately upon migration
  * @notice Owner keeps v2 tokens in wallet and approves contract to spend them
  */
 contract BabyBonkMigration is Ownable, ReentrancyGuard {
@@ -89,15 +91,6 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
 
     /// @notice Address of the owner's wallet to receive v1 tokens
     address public immutable v1ReceiverWallet;
-    
-    /// @notice Timestamp when migration becomes active
-    uint256 public immutable migrationStartTime;
-    
-    /// @notice Timestamp when phase 2 begins (3 weeks after start)
-    uint256 public immutable phaseTwoStartTime;
-    
-    /// @notice Duration of phase 1 in seconds (3 weeks)
-    uint256 public constant PHASE_ONE_DURATION = 3 weeks;
 
     /// @notice Total v1 tokens migrated in phase 1
     uint256 public totalV1Migrated;
@@ -111,19 +104,15 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     /// @notice Cached v2 total supply for gas optimization
     uint256 public immutable v2TotalSupply;
 
+    /// @notice flag to indicate if migration is active. This is set to true when migration starts
+    bool public isMigrationActive;
+
     // ============ Events ============
     
     event PhaseOneMigration(
         address indexed user,
         uint256 v1Amount,
         uint256 v2Amount
-    );
-    
-    event PhaseTwoMigration(
-        address indexed user,
-        uint256 v1Amount,
-        uint256 v2Amount,
-        uint256 minV2Amount
     );
 
     // ============ Modifiers ============
@@ -132,10 +121,7 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
      * @dev Ensures migration has started
      */
     modifier migrationActive() {
-        require(
-            block.timestamp >= migrationStartTime,
-            "TokenMigrator: Migration not yet active"
-        );
+        require(isMigrationActive, "BabyBonkMigrator: Migration not yet active");
         _;
     }
 
@@ -145,29 +131,25 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
      * @notice Initialize the migration contract with immutable parameters
      * @param _v1TokenAddress Address of the v1 token contract
      * @param _v2TokenAddress Address of the v2 token contract
-     * @param _migrationStartTime Timestamp when migration begins
      */
     constructor(
         address _v1TokenAddress,
         address _v2TokenAddress,
-        uint256 _migrationStartTime
+        address _v1ReceiverWallet
     ) Ownable() {
-        require(_v1TokenAddress != address(0), "TokenMigrator: Invalid v1 token address");
-        require(_v2TokenAddress != address(0), "TokenMigrator: Invalid v2 token address");
-        require(_migrationStartTime > block.timestamp, "TokenMigrator: Start time must be in future");
+        require(_v1TokenAddress != address(0), "BabyBonkMigrator: Invalid v1 token address");
+        require(_v2TokenAddress != address(0), "BabyBonkMigrator: Invalid v2 token address");
 
         v1TokenAddress = _v1TokenAddress;
         v2TokenAddress = _v2TokenAddress;
-        migrationStartTime = _migrationStartTime;
-        phaseTwoStartTime = _migrationStartTime + PHASE_ONE_DURATION;
-        v1ReceiverWallet = 0xd96213a8d85a8CD2D2475a4B488cc45db130C5EC; // Owner's wallet to receive v1 tokens
+        v1ReceiverWallet = _v1ReceiverWallet; // Owner's wallet to receive v1 tokens
         
         // Cache total supplies for gas optimization and immutability
         v1TotalSupply = IERC20(_v1TokenAddress).totalSupply();
         v2TotalSupply = IERC20(_v2TokenAddress).totalSupply();
         
-        require(v1TotalSupply > 0, "TokenMigrator: V1 total supply must be greater than zero");
-        require(v2TotalSupply > 0, "TokenMigrator: V2 total supply must be greater than zero");
+        require(v1TotalSupply > 0, "BabyBonkMigrator: V1 total supply must be greater than zero");
+        require(v2TotalSupply > 0, "BabyBonkMigrator: V2 total supply must be greater than zero");
     }
 
     // ============ Owner Functions ============
@@ -178,12 +160,22 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
      */
     function withdrawV1Tokens(uint256 amount) external onlyOwner {
         uint256 balance = IERC20(v1TokenAddress).balanceOf(address(this));
-        require(balance > 0, "TokenMigrator: No v1 tokens to withdraw");
+        require(balance > 0, "BabyBonkMigrator: No v1 tokens to withdraw");
         
         uint256 withdrawAmount = amount == 0 ? balance : amount;
-        require(withdrawAmount <= balance, "TokenMigrator: Insufficient v1 token balance");
+        require(withdrawAmount <= balance, "BabyBonkMigrator: Insufficient v1 token balance");
         
         IERC20(v1TokenAddress).transfer(owner(), withdrawAmount);
+    }
+
+    function tradingEnabled() public view returns (bool) {
+        // Trading is enabled if liquidity has been added and phase 2 has started
+        return IERC20(v2TokenAddress).tradingEnabled();
+    }
+
+    function activateMigration() external onlyOwner {
+        require(!isMigrationActive, "BabyBonkMigrator: Migration already active");
+        isMigrationActive = true;
     }
 
     function getExpectedMigrationOutput(uint256 v1Amount) 
@@ -191,19 +183,18 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         view
         returns (uint256) 
     {
-        require(v1Amount > 0, "TokenMigrator: Amount must be greater than zero");
-        
-        if (block.timestamp < migrationStartTime) {
+        require(v1Amount > 0, "BabyBonkMigrator: Amount must be greater than zero");
+        if (!isMigrationActive) {
             return 0; // Migration not started
         }
         
-        if (block.timestamp < phaseTwoStartTime) {
+        if (!tradingEnabled()) {
             // Phase 1: Proportional ratio based on total supplies
             uint256 v2Amount = calculateV2Amount(v1Amount);
             uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
             uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
             uint256 availableAmount = ownerBalance < allowance ? ownerBalance : allowance;
-            require(v2Amount <= availableAmount, "TokenMigrator: Insufficient v2 token allowance from owner");
+            require(v2Amount <= availableAmount, "BabyBonkMigrator: Insufficient v2 token allowance from owner");
             return v2Amount;
         } else {
             // Phase 2: Get expected output from DEX
@@ -222,46 +213,15 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         nonReentrant 
         migrationActive 
     {
-        require(amount > 0, "TokenMigrator: Amount must be greater than zero");
+        require(amount > 0, "BabyBonkMigrator: Amount must be greater than zero");
         
         IERC20(v1TokenAddress).transferFrom(msg.sender, v1ReceiverWallet, amount);
-        
-        if (block.timestamp < phaseTwoStartTime) {
+        if (!tradingEnabled()) {
             // Phase 1: Direct 1:1 migration using owner's v2 token allowance
             _migratePhaseOne(amount);
         } else {
             // Phase 2: DEX-based migration
-            revert("Phase 1 completed please use pancake router to migrate");
-        }
-    }
-
-    // ============ View Functions ============
-    
-    /**
-     * @notice Check which migration phase is currently active
-     * @return phase Current phase (1 or 2), 0 if migration hasn't started
-     */
-    function getCurrentPhase() external view returns (uint8 phase) {
-        if (block.timestamp < migrationStartTime) {
-            return 0; // Not started
-        } else if (block.timestamp < phaseTwoStartTime) {
-            return 1; // Phase 1
-        } else {
-            return 2; // Phase 2
-        }
-    }
-
-    /**
-     * @notice Get time remaining in current phase
-     * @return timeRemaining Seconds remaining in current phase (0 if in phase 2)
-     */
-    function getTimeRemainingInPhase() external view returns (uint256 timeRemaining) {
-        if (block.timestamp < migrationStartTime) {
-            return migrationStartTime - block.timestamp;
-        } else if (block.timestamp < phaseTwoStartTime) {
-            return phaseTwoStartTime - block.timestamp;
-        } else {
-            return 0; // Phase 2 is indefinite
+            revert("BabyBonkMigrator: Phase 1 completed please use pancake router");
         }
     }
 
@@ -273,30 +233,6 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
         uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
         return ownerBalance < allowance ? ownerBalance : allowance;
-    }
-
-    /**
-     * @notice Get owner's v2 token balance
-     * @return balance Owner's v2 token balance
-     */
-    function getOwnerV2Balance() external view returns (uint256 balance) {
-        return IERC20(v2TokenAddress).balanceOf(owner());
-    }
-
-    /**
-     * @notice Get owner's allowance to this contract for v2 tokens
-     * @return allowance Current allowance from owner to this contract
-     */
-    function getOwnerV2Allowance() external view returns (uint256 allowance) {
-        return IERC20(v2TokenAddress).allowance(owner(), address(this));
-    }
-
-    /**
-     * @notice Get collected v1 tokens that can be withdrawn by owner
-     * @return collected Amount of v1 tokens in contract
-     */
-    function getCollectedV1Tokens() external view returns (uint256 collected) {
-        return IERC20(v1TokenAddress).balanceOf(address(this));
     }
 
     /**
@@ -332,11 +268,11 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         
         // Check owner's v2 token balance
         uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
-        require(ownerBalance >= v2Amount, "TokenMigrator: Owner has insufficient v2 token balance");
+        require(ownerBalance >= v2Amount, "BabyBonkMigrator: Owner has insufficient v2 token balance");
         
         // Check owner's allowance to this contract
         uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
-        require(allowance >= v2Amount, "TokenMigrator: Insufficient v2 token allowance from owner");
+        require(allowance >= v2Amount, "BabyBonkMigrator: Insufficient v2 token allowance from owner");
         
         // Transfer v2 tokens from owner to user (v1 tokens already received by contract)
         IERC20(v2TokenAddress).transferFrom(owner(), msg.sender, v2Amount);

@@ -468,11 +468,10 @@ contract BabyBonkV2 is ERC20, Ownable {
     bool    public swapEnabled;
     bool public tradingEnabled;
 
-    uint112 public unpauseTime = 1756889594; // Date and time (GMT): Wednesday, September 3, 2025 8:53:14 AM
     mapping(address => bool) private _isExcludedFromPause;
 
     modifier pauseCheck() {
-        require(block.timestamp >= unpauseTime || _isExcludedFromPause[_msgSender()] || _isExcludedFromPause[tx.origin], "Contract is paused");
+        require(tradingEnabled || _isExcludedFromPause[_msgSender()] || _isExcludedFromPause[tx.origin], "BABYBONK: Token transfers are paused");
         _;
     }
 
@@ -485,11 +484,10 @@ contract BabyBonkV2 is ERC20, Ownable {
     event SwapAndSendMarketing(uint256 tokensSwapped, uint256 bnbSend);
     event SwapTokensAtAmountUpdated(uint256 swapTokensAtAmount);
 
-    constructor (uint112 _unpauseTime) ERC20("Baby Bonk", "BabyBonk") 
+    constructor () ERC20("Baby Bonk", "BabyBonk") 
     {   
         address router;
         address pinkLock;
-        unpauseTime = _unpauseTime;
         
         if (block.chainid == 97) {
             router = 0xD99D1c33F9fC3444f8101754aBC46c52416550D1; // BSC Pancake Testnet Router
@@ -544,6 +542,8 @@ contract BabyBonkV2 is ERC20, Ownable {
         _isExcludedFromFees[address(0xdead)] = true;
         _isExcludedFromFees[address(this)] = true;
         _isExcludedFromFees[pinkLock] = true;
+        
+        _isExcludedFromPause[owner()] = true;
 
         _mint(owner(), 420_000_000_000 * (10 ** decimals())); // 420 Billion tokens
         swapTokensAtAmount = totalSupply() / 5_000;
