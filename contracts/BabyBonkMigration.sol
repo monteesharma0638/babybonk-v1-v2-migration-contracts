@@ -183,18 +183,13 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
         view
         returns (uint256) 
     {
-        require(v1Amount > 0, "BabyBonkMigrator: Amount must be greater than zero");
-        if (!isMigrationActive) {
-            return 0; // Migration not started
+        if(v1Amount == 0 || !isMigrationActive) {
+            return 0;
         }
         
         if (!tradingEnabled()) {
             // Phase 1: Proportional ratio based on total supplies
             uint256 v2Amount = calculateV2Amount(v1Amount);
-            uint256 ownerBalance = IERC20(v2TokenAddress).balanceOf(owner());
-            uint256 allowance = IERC20(v2TokenAddress).allowance(owner(), address(this));
-            uint256 availableAmount = ownerBalance < allowance ? ownerBalance : allowance;
-            require(v2Amount <= availableAmount, "BabyBonkMigrator: Insufficient v2 token allowance from owner");
             return v2Amount;
         } else {
             // Phase 2: Get expected output from DEX
@@ -243,17 +238,8 @@ contract BabyBonkMigration is Ownable, ReentrancyGuard {
     function calculateV2Amount(uint256 v1Amount) public view returns (uint256 v2Amount) {
         // Formula: v2Amount = (v1Amount * v2TotalSupply) / v1TotalSupply
         // This maintains the proportional relationship based on total supplies
-        return (v1Amount * v2TotalSupply) / v1TotalSupply;
-    }
-
-    /**
-     * @notice Get the migration ratio (how many v2 tokens per v1 token)
-     * @return ratio Migration ratio scaled by 1e18 for precision
-     */
-    function getMigrationRatio() external view returns (uint256 ratio) {
-        // Returns ratio with 18 decimal precision
-        // Example: if 1 v1 = 10 v2, returns 10 * 1e18
-        return (v2TotalSupply * 1e18) / v1TotalSupply;
+        uint256 v2Amount = (v1Amount * v2TotalSupply) / v1TotalSupply;
+        return v2Amount;
     }
 
     // ============ Internal Functions ============

@@ -572,7 +572,7 @@ contract BabyBonkV2 is ERC20, Ownable {
         ERC20token.transfer(msg.sender, balance);
     }
 
-    function setPair (address _uniswapV2Pair) external onlyOwner {
+    function setPair(address _uniswapV2Pair) external onlyOwner {
         require(!pairSet, "Cannot change the pair");
         uniswapV2Pair = _uniswapV2Pair;
     }
